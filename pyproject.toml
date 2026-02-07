@@ -1,0 +1,22 @@
+[project]
+name = "connection-mapper"
+version = "0.1.0"
+description = "Connection Mapper captures traffic and visualises the devices your device connects to while its running"
+authors = [
+    {name = "Sam",email = "seriousemail178@gmail.com"}
+]
+license = "GPL-3.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12,<3.14.1 || >3.14.1,<4"
+dependencies = [
+    "scapy (>=2.7.0,<3.0.0)",
+    "matplotlib (>=3.10.8,<4.0.0)",
+    "networkx (>=3.6.1,<4.0.0)"
+]
+
+[project.scripts]
+connection-mapper = "connection_mapper.debug_cli:debug_cli"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
