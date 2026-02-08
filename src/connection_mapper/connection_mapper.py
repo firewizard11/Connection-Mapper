@@ -54,12 +54,6 @@ class ConnectionMapper:
         src = ip_data.src
         dst = ip_data.dst
 
-        if src in self.central_nodes:
-            src = self.central_nodes
-        
-        elif dst in self.central_nodes:
-            dst = self.central_nodes
-
         with self.mutex:
             self.cap_count += 1
             self.map.add_edge(src, dst)
@@ -67,12 +61,23 @@ class ConnectionMapper:
     def draw_map(self):
         print("[INFO] Drawing Map")
         with self.mutex:
-            if self.map.number_of_nodes() < 20:
+            if self.map.number_of_nodes() < 10:
                 with_labels = True
             else:
                 with_labels = False
 
-            nx.draw(self.map, with_labels=with_labels)
+            colors = []
+            labels = []
+
+            for node in self.map.nodes:
+                if node in self.central_nodes:
+                    colors.append("red")
+                    labels.append("LOCAL")
+                else:
+                    colors.append("blue")
+                    labels.append(node)
+
+            nx.draw(self.map, with_labels=with_labels, node_color=colors)
             plt.show()
 
     def get_device_ips(self) -> list[str]:
