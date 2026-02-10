@@ -4,7 +4,6 @@ import threading
 
 from scapy.all import AsyncSniffer, Raw, IP, get_if_list, get_if_addr
 
-
 class ConnectionMapper:
     
     def __init__(self):
@@ -45,7 +44,7 @@ class ConnectionMapper:
         except PermissionError:
             print("[FAIL] Please run program as admin")
         except Exception as e:
-            print("[FAIL] " + e)
+            print(f"[FAIL] {e}")
 
         self.sniffing = False
 
