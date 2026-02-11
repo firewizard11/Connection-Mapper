@@ -60,10 +60,9 @@ class ConnectionMapperGUI:
     def _update_status(self):
         capture_status = self.mapper.get_status()
 
-        self.status_lbl.setText(f"Capture Status: {"Running" if capture_status["capturing"] else "Not Running"}")
-        self.pkt_cnt_lbl.setText(f"Packet Count: {capture_status["cap_count"]}")
-        self.node_cnt_lbl.setText(f"Node Count: {capture_status["node_count"]}")
-
+        self.status_lbl.setText(f"Capture Status: {"Running" if capture_status.is_capturing else "Not Running"}")
+        self.pkt_cnt_lbl.setText(f"Packet Count: {capture_status.packet_cnt}")
+        self.node_cnt_lbl.setText(f"Node Count: {capture_status.node_cnt}")
 
 if __name__ == "__main__":
     gui = ConnectionMapperGUI()
