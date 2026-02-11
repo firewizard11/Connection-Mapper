@@ -1,14 +1,15 @@
+import ipaddress
+import logging
+import platform
+import subprocess
+import sys
+import threading
+from dataclasses import dataclass
+
 import matplotlib.pyplot as plt
 import networkx as nx
-import threading
-import ipaddress
-import subprocess
-import platform
-import logging
-from dataclasses import dataclass
-import sys
+from scapy.all import AsyncSniffer, IP, get_if_list, get_if_addr
 
-from scapy.all import AsyncSniffer, Raw, IP, get_if_list, get_if_addr
 
 @dataclass(frozen=True, slots=True)
 class CaptureStatus:
@@ -83,11 +84,15 @@ class ConnectionMapper:
 
         self.logger.info(f"Stopped Packet Capture (Packet Count = {count})")
 
-
-    def draw_map(self):
+    def get_map(self) -> nx.DiGraph:
         with self.lock:
             map_copy = self.map.copy()
-            self.logger.info("Created map copy")
+            
+        self.logger.info("Created map copy")
+        return map_copy
+
+    def draw_map(self):
+        map_copy = self.get_map()
         
         colors = []
         labels = {}
@@ -106,15 +111,6 @@ class ConnectionMapper:
         
         plt.show()
 
-    def _get_device_ips(self) -> list[str]:
-        device_ips = []
-        for interface in get_if_list():
-            ip = get_if_addr(interface)
-            if ip != "0.0.0.0":
-                device_ips.append(ip)
-
-        return device_ips
-    
     def get_status(self) -> CaptureStatus:
         with self.lock:
             status = CaptureStatus(
@@ -124,6 +120,15 @@ class ConnectionMapper:
             )
 
         return status
+
+    def _get_device_ips(self) -> list[str]:
+        device_ips = []
+        for interface in get_if_list():
+            ip = get_if_addr(interface)
+            if ip != "0.0.0.0":
+                device_ips.append(ip)
+
+        return device_ips
 
     def _process_packet(self, packet):
         """Extracts the IP src and dst from the packet and adds them to self.map"""
