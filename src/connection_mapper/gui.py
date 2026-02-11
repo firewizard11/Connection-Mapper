@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QGroupBo
 from PyQt6.QtCore import QTimer
 from connection_mapper import ConnectionMapper
 
+
 class ConnectionMapperGUI:
 
     def __init__(self):
@@ -62,6 +63,7 @@ class ConnectionMapperGUI:
         self.status_lbl.setText(f"Capture Status: {"Running" if capture_status["capturing"] else "Not Running"}")
         self.pkt_cnt_lbl.setText(f"Packet Count: {capture_status["cap_count"]}")
         self.node_cnt_lbl.setText(f"Node Count: {capture_status["node_count"]}")
+
 
 if __name__ == "__main__":
     gui = ConnectionMapperGUI()

@@ -1,7 +1,8 @@
 from connection_mapper.connection_mapper import ConnectionMapper
 
+
 def debug_cli():
-    cm = ConnectionMapper()
+    cm = ConnectionMapper(is_verbose=True)
 
     while (True):
         cmd = input("> ")
@@ -26,12 +27,12 @@ def debug_cli():
                 break
             case "status":
                 status = cm.get_status()
-                if status["capturing"]:
+                if status.is_capturing:
                     print("[INFO] Capture is running")
                 else:
                     print("[INFO] Capture is not running")
 
-                print(f"[INFO] Captured {status["cap_count"]} Packets")
-                print(f"[INFO] Found {status["node_count"]} Nodes")
+                print(f"[INFO] Captured {status.packet_cnt} Packets")
+                print(f"[INFO] Found {status.node_cnt} Nodes")
             case _:
                 print("[INFO] Enter 'help' to see commands")

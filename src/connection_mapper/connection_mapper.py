@@ -1,85 +1,112 @@
 import matplotlib.pyplot as plt
 import networkx as nx
 import threading
+import ipaddress
+import subprocess
+import platform
+import logging
+from dataclasses import dataclass
+import sys
 
 from scapy.all import AsyncSniffer, Raw, IP, get_if_list, get_if_addr
 
+@dataclass(frozen=True, slots=True)
+class CaptureStatus:
+    is_capturing: bool
+    packet_cnt: int
+    node_cnt: int
+
+
 class ConnectionMapper:
     
-    def __init__(self):
-        self.mutex = threading.Lock()
-        self.cap_count = 0
-        self.sniffing = False
+    def __init__(self, is_verbose: bool = False):
+        self.logger = logging.getLogger("conn-map")
+        if is_verbose:
+            self._setup_logger()
+        else:
+            self._setup_logger(logging.CRITICAL)
+
+        self.lock = threading.Lock()
+        self.packet_cnt = 0
+        self.is_capturing = False
+        self.gateways = self._get_gateways()
+        if len(self.gateways) == 0:
+            self.logger.warning("Couldn't find gateways")
+
 
         self.sniffer = AsyncSniffer(
-            prn=lambda x: self.process_packet(x),
+            prn=lambda x: self._process_packet(x),
             filter="ip"
         )
 
-        self.central_nodes = tuple(self.get_device_ips())
-        print(f"[INFO] Found Device IPs: {self.central_nodes}")
+        self.central_nodes = tuple(self._get_device_ips())
+        self.logger.info(f"Found Device IPs: {self.central_nodes}")
 
         self.map = nx.DiGraph()
 
     def start_capture(self):
-        self.sniffer.start()
-        self.sniffing = True
+        with self.lock:
+            if self.is_capturing:
+                self.logger.warning("Packet Capture already running")
+                return
 
-        if self.sniffer.exception is not None:
-            self.stop_capture()
+        try:
+            self.sniffer.start()
+        except PermissionError:
+            self.logger.critical("Can't capture due to low permissions")
+            return
+        except Exception as e:
+            self.logger.critical(f"Unhandled Exception: {e}")
             return
 
-        print("[INFO] Capturing Packets")
+        with self.lock:
+            self.is_capturing = True
+
+        self.logger.info("Started Packet Capture")
 
     def stop_capture(self):
-        if not self.sniffing:
-            print("[INFO] Not Capturing Packets")
-            return
+        with self.lock:
+            if not self.is_capturing:
+                self.logger.warning("Packet Capture not running")
+                return
         
         try:
-            result = self.sniffer.stop()
-            if result is not None:
-                print(f"[INFO] Captured {len(result)} Packets")
-            print("[INFO] Stopped packet capture")
+            self.sniffer.stop()
         except PermissionError:
-            print("[FAIL] Please run program as admin")
+            self.logger.critical("Can't capture due to low permissions")
         except Exception as e:
-            print(f"[FAIL] {e}")
+            self.logger.critical(f"Unhandled Exception: {e}")
+        finally:
+            with self.lock:
+                self.is_capturing = False
+                count = self.packet_cnt
 
-        self.sniffing = False
+        self.logger.info(f"Stopped Packet Capture (Packet Count = {count})")
 
-    def process_packet(self, raw_packet: Raw):
-        ip_data = raw_packet[IP]
-        src = ip_data.src
-        dst = ip_data.dst
-
-        with self.mutex:
-            self.cap_count += 1
-            self.map.add_edge(src, dst)
 
     def draw_map(self):
-        print("[INFO] Drawing Map")
-        with self.mutex:
-            if self.map.number_of_nodes() < 10:
-                with_labels = True
-            else:
-                with_labels = False
+        with self.lock:
+            map_copy = self.map.copy()
+            self.logger.info("Created map copy")
+        
+        colors = []
+        labels = {}
 
-            colors = []
-            labels = []
+        pos = nx.spring_layout(map_copy)
 
-            for node in self.map.nodes:
-                if node in self.central_nodes:
-                    colors.append("red")
-                    labels.append("LOCAL")
-                else:
-                    colors.append("blue")
-                    labels.append(node)
+        for node, data in map_copy.nodes.items():
+            colors.append(data["color"])
+            labels[node] = data["label"]
 
-            nx.draw(self.map, with_labels=with_labels, node_color=colors)
-            plt.show()
+        nx.draw(map_copy, pos, node_color=colors)
 
-    def get_device_ips(self) -> list[str]:
+        if map_copy.number_of_nodes() < 10:
+            self.logger.info("Adding labels to map")
+            nx.draw_networkx_labels(map_copy, pos, labels)
+        
+        plt.show()
+
+    def _get_device_ips(self) -> list[str]:
         device_ips = []
         for interface in get_if_list():
             ip = get_if_addr(interface)
@@ -88,10 +115,120 @@ class ConnectionMapper:
 
         return device_ips
     
-    def get_status(self) -> dict:
-        status = {}
-        with self.mutex:
-            status["capturing"] = self.sniffing
-            status["cap_count"] = self.cap_count
-            status["node_count"] = self.map.number_of_nodes()
+    def get_status(self) -> CaptureStatus:
+        with self.lock:
+            status = CaptureStatus(
+                self.is_capturing, 
+                self.packet_cnt, 
+                self.map.number_of_nodes()
+            )
+
         return status
+
+    def _process_packet(self, packet):
+        """Extracts the IP src and dst from the packet and adds them to self.map"""
+        if IP not in packet:
+            return
+
+        ip_data = packet[IP]
+        src = ip_data.src
+        dst = ip_data.dst
+
+        with self.lock:
+            self._add_node(src)
+            self._add_node(dst)
+            self.packet_cnt += 1
+            self.map.add_edge(src, dst)
+
+    def _add_node(self, ip: str):
+        """Classifies node and adds it to self.map with color and label attributes
+
+        WARNING: Not thread safe (in this class assumes calling function has lock)
+
+        Classifications (label, color):
+        - This Device (LOCAL, red)
+        - Local LAN (ip, green)
+        - Multicast (MULTICAST, black)
+        - Gateway (GATEWAY, purple)
+        - Public IP (ip, blue)
+        
+        Called By:
+        - _process_packet
+        """
+        if self.map.has_node(ip):
+            return
+
+        ip_info = ipaddress.IPv4Address(ip)
+
+        if ip in self.central_nodes:
+            self.map.add_node(ip, label="LOCAL", color="red")
+        elif ip in self.gateways:
+            self.map.add_node(ip, label="GATEWAY", color="purple")
+        elif ip_info.is_multicast:
+            self.map.add_node(ip, label="MULTICAST", color="black")
+        elif ip_info.is_private:
+            self.map.add_node(ip, label=ip, color="green")
+        else:
+            self.map.add_node(ip, label=ip, color="blue")
+
+    def _get_gateways(self) -> set[str]:
+        """Gets all gateway entries from the routing table and returns a set of their labels
+        
+        Platform Support:
+        - Windows: Uses 'route print -4' command to find gateways
+        - Linux: Uses 'ip route list' command to find gateways
+
+        Called By:
+        - __init__
+        """
+        os = platform.system()
+        gateways = set()
+
+        if os == "Windows":
+            result = subprocess.run(["route", "print", "-4"], capture_output=True, text=True)
+            output_lines = result.stdout.split("\n")
+            start = None
+            end = None
+
+            for i in range(len(output_lines)):
+                if "Active Routes" in output_lines[i]:
+                    start = i
+
+                elif start is not None and "=" in output_lines[i]:
+                    end = i
+
+            active_routes_entries = output_lines[start+2:end]
+            for entry in active_routes_entries:
+                entry_fields = entry.split()
+                if (len(entry_fields) > 2):
+                    gateway = entry_fields[2]
+                    gateways.add(gateway)
+
+        elif os == "Linux":
+            result = subprocess.run(["ip", "route", "list"], capture_output=True, text=True)
+            lines = result.stdout.split("\n")
+            for line in lines:
+                if "via" not in line:
+                    continue
+
+                parts = line.split()
+                if len(parts) > 2:
+                    gateway = parts[2]
+                    gateways.add(gateway)
+
+        else:
+            self.logger.warning(f"Gateway Discovery not implemented for {os}")
+
+        return gateways
+
+    def _setup_logger(self, level = logging.INFO):
+        self.logger.setLevel(level)
+        
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(level)
+        handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+
+        self.logger.handlers.clear()
+        self.logger.addHandler(handler)
+
+        self.logger.propagate = False
