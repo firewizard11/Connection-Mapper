@@ -7,7 +7,8 @@ authors = [
 ]
 license = "GPL-3.0"
 license-files = ["LICENSE"]
-requires-python = ">=3.12,<3.14.1 || >3.14.1,<4"
+requires-python = ">=3.12,<3.14.1 || >3.14.1,<3.15"
+readme="README.md"
 dependencies = [
     "scapy (>=2.7.0,<3.0.0)",
     "matplotlib (>=3.10.8,<4.0.0)",
@@ -15,12 +16,23 @@ dependencies = [
     "pyqt6 (>=6.10.2,<7.0.0)"
 ]
 
+[tool.poetry]
+packages = [
+  { include = "connection_mapper", from = "src" },
+  { include = "connection_mapper_gui", from = "src" }
+]
+
 [project.scripts]
 cm-cli = "connection_mapper.debug_cli:debug_cli"
 
 [project.gui-scripts]
-cm-gui = "connection_mapper.gui:main"
+cm-gui = "connection_mapper_gui.gui:gui_entry"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pyinstaller (>=6.18.0,<7.0.0)"
+]

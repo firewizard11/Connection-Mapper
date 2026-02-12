@@ -1,6 +1,8 @@
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QGroupBox, QHBoxLayout, QVBoxLayout, QGridLayout
-from PyQt6.QtCore import QTimer
-from connection_mapper import ConnectionMapper
+from connection_mapper.connection_mapper import ConnectionMapper
+from connection_mapper_gui.custom_widgets import QDiGraphView
+
+from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QGroupBox, QHBoxLayout, QGridLayout
+from PyQt6.QtCore import QTimer, Qt
 
 
 class ConnectionMapperGUI:
@@ -15,7 +17,10 @@ class ConnectionMapperGUI:
         self.ctrl_btn = QPushButton()
         self.status_lbl = QLabel()
         self.pkt_cnt_lbl = QLabel()
-        self.node_cnt_lbl = QLabel()        
+        self.node_cnt_lbl = QLabel()
+
+        self.map_grp = QGroupBox()
+        self.map_view = QDiGraphView(self.mapper.get_map())    
 
         self._configure_widgets()
         self._configure_layout()
@@ -27,7 +32,10 @@ class ConnectionMapperGUI:
 
     def _configure_widgets(self):
         self.window.setWindowTitle("Connection Mapper")
+        self.window.setWindowState(Qt.WindowState.WindowMaximized)
+
         self.timer.timeout.connect(self._update_status)
+        self.timer.timeout.connect(self._update_map)
         
         self.ctrl_grp.setTitle("Capture Control")
         self.ctrl_btn.setText("Start")
@@ -42,8 +50,13 @@ class ConnectionMapperGUI:
         ctrl_grp_layout.addWidget(self.ctrl_btn, 1, 1)
         self.ctrl_grp.setLayout(ctrl_grp_layout)
 
+        map_grp_layout = QHBoxLayout()
+        map_grp_layout.addWidget(self.map_view)
+        self.map_grp.setLayout(map_grp_layout)
+
         main_layout = QGridLayout()
         main_layout.addWidget(self.ctrl_grp, 0, 1)
+        main_layout.addWidget(self.map_grp, 2, 1)
 
         self.window.setLayout(main_layout)
 
@@ -63,7 +76,12 @@ class ConnectionMapperGUI:
         self.status_lbl.setText(f"Capture Status: {"Running" if capture_status.is_capturing else "Not Running"}")
         self.pkt_cnt_lbl.setText(f"Packet Count: {capture_status.packet_cnt}")
         self.node_cnt_lbl.setText(f"Node Count: {capture_status.node_cnt}")
+    
+    def _update_map(self):
+        new_map = self.mapper.get_map()
+        self.map_view.update_graph(new_map)
 
-if __name__ == "__main__":
+
+def gui_entry():
     gui = ConnectionMapperGUI()
     gui.run()
