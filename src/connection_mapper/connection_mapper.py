@@ -6,7 +6,6 @@ import sys
 import threading
 from dataclasses import dataclass
 
-import matplotlib.pyplot as plt
 import networkx as nx
 from scapy.all import AsyncSniffer, IP, get_if_list, get_if_addr
 
@@ -90,26 +89,6 @@ class ConnectionMapper:
             
         self.logger.info("Created map copy")
         return map_copy
-
-    def draw_map(self):
-        map_copy = self.get_map()
-        
-        colors = []
-        labels = {}
-
-        pos = nx.spring_layout(map_copy)
-
-        for node, data in map_copy.nodes.items():
-            colors.append(data["color"])
-            labels[node] = data["label"]
-
-        nx.draw(map_copy, pos, node_color=colors)
-
-        if map_copy.number_of_nodes() < 10:
-            self.logger.info("Adding labels to map")
-            nx.draw_networkx_labels(map_copy, pos, labels)
-        
-        plt.show()
 
     def get_status(self) -> CaptureStatus:
         with self.lock:
