@@ -99,6 +99,7 @@ class QEdge(QGraphicsItem):
         return target
 
     def paint(self, painter, option, widget = ...):
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         pen = QPen(self._color, self._line_thickness, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
         painter.drawLine(self._line)
@@ -125,6 +126,7 @@ class QDiGraphView(QGraphicsView):
         self._node_map = {}
 
         self.load_graph()
+        self.fitInView(self._scene.sceneRect().adjusted(-200, -200, -200, -200), Qt.AspectRatioMode.KeepAspectRatio)
 
     def load_graph(self):
         self._scene.clear()
@@ -139,7 +141,6 @@ class QDiGraphView(QGraphicsView):
         self.add_edges()
 
         self._scene.setSceneRect(self._scene.itemsBoundingRect())
-        self.fitInView(self._scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
     def add_nodes(self):
         for node, data in self._graph.nodes.items():
