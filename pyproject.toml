@@ -28,5 +28,7 @@ build-backend = "poetry.core.masonry.api"
 
 [dependency-groups]
 dev = [
-    "nuitka (>=4.0,<5.0)"
+    "nuitka (>=4.0,<5.0)",
+    "zstandard (>=0.25.0,<0.26.0)",
+    "ordered-set (>=4.1.0,<5.0.0)"
 ]

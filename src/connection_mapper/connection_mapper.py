@@ -7,7 +7,10 @@ import threading
 from dataclasses import dataclass
 
 import networkx as nx
-from scapy.all import AsyncSniffer, IP, get_if_list, get_if_addr
+from scapy.sendrecv import AsyncSniffer
+from scapy.layers.inet import IP
+from scapy.arch import get_if_list
+from scapy.interfaces import get_if_addr
 
 
 @dataclass(frozen=True, slots=True)
