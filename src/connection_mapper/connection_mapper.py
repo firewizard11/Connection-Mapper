@@ -1,221 +1,150 @@
 import ipaddress
-import logging
-import platform
-import subprocess
-import sys
 import threading
 from dataclasses import dataclass
 
 import networkx as nx
-from scapy.sendrecv import AsyncSniffer
+from scapy.interfaces import get_working_ifaces, NetworkInterface
 from scapy.layers.inet import IP
-from scapy.arch import get_if_list
-from scapy.interfaces import get_if_addr
+from scapy.sendrecv import AsyncSniffer
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CaptureStatus:
     is_capturing: bool
-    packet_cnt: int
-    node_cnt: int
+    packets_processed: int
+    nodes_found: int
 
 
 class ConnectionMapper:
-    
-    def __init__(self, is_verbose: bool = False):
-        self.logger = logging.getLogger("conn-map")
-        if is_verbose:
-            self._setup_logger()
-        else:
-            self._setup_logger(logging.CRITICAL)
+    """ This class uses the network traffic generated from your device to create a directed graph
 
+    Public API:
+    - start_capture(): Starts the packet capture
+    - stop_capture(): Stops the packet capture
+    - get_status() -> CaptureStatus: Returns info on the capture (is_capturing, packets_processed, nodes_found)
+    - get_map() -> nx.DiGraph: Returns a snapshot of the network graph at the point of calling
+    """
+
+    def __init__(self):
+        # Device Attr
+        self._public_interfaces = self._find_public_interfaces()
+
+        if len(self._public_interfaces) == 0:
+            raise ValueError("Couldn't find public interfaces")
+
+        self._public_ifnames = []
+        self._public_ipv4 = []
+        
+        for _if in self._public_interfaces:
+            self._public_ifnames.append(_if.name)
+            self._public_ipv4.append(_if.ip)
+        
+        # Capture Attr
+        self._capture_status = CaptureStatus(False, 0, 0) # Must Lock
         self.lock = threading.Lock()
-        self.packet_cnt = 0
-        self.is_capturing = False
-        self.gateways = self._get_gateways()
-        if len(self.gateways) == 0:
-            self.logger.warning("Couldn't find gateways")
-
-
-        self.sniffer = AsyncSniffer(
+        self._capturer = AsyncSniffer(
             prn=lambda x: self._process_packet(x),
-            filter="ip"
+            iface=self._public_interfaces
         )
 
-        self.central_nodes = tuple(self._get_device_ips())
-        self.logger.info(f"Found Device IPs: {self.central_nodes}")
-
-        self.map = nx.DiGraph()
+        # Graph Attr
+        self._map = nx.DiGraph() # Must Lock
+        self._map.add_node(tuple(self._public_ipv4), label="LOCAL", color="red")
+        self._capture_status.nodes_found += 1
 
     def start_capture(self):
-        with self.lock:
-            if self.is_capturing:
-                self.logger.warning("Packet Capture already running")
-                return
-
         try:
-            self.sniffer.start()
-        except PermissionError:
-            self.logger.critical("Can't capture due to low permissions")
-            return
+            self._capturer.start()
         except Exception as e:
-            self.logger.critical(f"Unhandled Exception: {e}")
-            return
-
-        with self.lock:
-            self.is_capturing = True
-
-        self.logger.info("Started Packet Capture")
+            raise e
+        
+        self._capture_status.is_capturing = True
 
     def stop_capture(self):
-        with self.lock:
-            if not self.is_capturing:
-                self.logger.warning("Packet Capture not running")
-                return
-        
-        try:
-            self.sniffer.stop()
-        except PermissionError:
-            self.logger.critical("Can't capture due to low permissions")
-        except Exception as e:
-            self.logger.critical(f"Unhandled Exception: {e}")
-        finally:
-            with self.lock:
-                self.is_capturing = False
-                count = self.packet_cnt
+        if not self._capture_status.is_capturing:
+            return
 
-        self.logger.info(f"Stopped Packet Capture (Packet Count = {count})")
-
-    def get_map(self) -> nx.DiGraph:
+        self._capturer.stop()
         with self.lock:
-            map_copy = self.map.copy()
-            
-        self.logger.info("Created map copy")
-        return map_copy
+            if self._capture_status.is_capturing:
+                self._capture_status.is_capturing = False
 
     def get_status(self) -> CaptureStatus:
         with self.lock:
-            status = CaptureStatus(
-                self.is_capturing, 
-                self.packet_cnt, 
-                self.map.number_of_nodes()
-            )
+            return self._capture_status
 
-        return status
+    def get_map(self) -> nx.DiGraph:
+        with self.lock:
+            return self._map.copy()
 
-    def _get_device_ips(self) -> list[str]:
-        device_ips = []
-        for interface in get_if_list():
-            ip = get_if_addr(interface)
-            if ip != "0.0.0.0":
-                device_ips.append(ip)
+    def _find_public_interfaces(self) -> list[NetworkInterface]:
+        """ Tries to find the public nic like wlan0 or Wi-Fi (excluding virtual) """
+        interfaces = get_working_ifaces()
+        public_ifs = []
 
-        return device_ips
+        for _if in interfaces:
+            if _if.ip is None or _if.ip == "":
+                continue
 
+            ip = ipaddress.IPv4Address(_if.ip)
+            
+            if ip.is_link_local:
+                continue
+
+            if ip.is_loopback:
+                continue
+
+            if not ip.is_private:
+                continue
+
+            ifname = _if.name.lower()
+            if "vmware" in ifname or "virtual" in ifname or "hyper-v" in ifname:
+                continue
+
+            public_ifs.append(_if)
+
+        return public_ifs
+    
     def _process_packet(self, packet):
-        """Extracts the IP src and dst from the packet and adds them to self.map"""
         if IP not in packet:
             return
-
+        
         ip_data = packet[IP]
         src = ip_data.src
         dst = ip_data.dst
 
-        with self.lock:
-            self._add_node(src)
-            self._add_node(dst)
-            self.packet_cnt += 1
-            self.map.add_edge(src, dst)
-
-    def _add_node(self, ip: str):
-        """Classifies node and adds it to self.map with color and label attributes
-
-        WARNING: Not thread safe (in this class assumes calling function has lock)
-
-        Classifications (label, color):
-        - This Device (LOCAL, red)
-        - Local LAN (ip, green)
-        - Multicast (MULTICAST, black)
-        - Gateway (GATEWAY, purple)
-        - Public IP (ip, blue)
-        
-        Called By:
-        - _process_packet
-        """
-        if self.map.has_node(ip):
+        if src not in self._public_ipv4 and dst not in self._public_ipv4:
             return
 
+        with self.lock:
+            self._add_conn(src, dst)
+            self._capture_status.packets_processed += 1
+
+    def _add_conn(self, src: str, dst: str):
+        if src in self._public_ipv4:
+            src = tuple(self._public_ipv4)
+        else:
+            self._add_node(src)
+
+        if dst in self._public_ipv4:
+            dst = tuple(self._public_ipv4)
+        else:
+            self._add_node(dst)
+
+        self._map.add_edge(src, dst)
+
+    def _add_node(self, ip: str):
+        if ip in self._map.nodes:
+            return
+        
         ip_info = ipaddress.IPv4Address(ip)
 
-        if ip in self.central_nodes:
-            self.map.add_node(ip, label="LOCAL", color="red")
-        elif ip in self.gateways:
-            self.map.add_node(ip, label="GATEWAY", color="purple")
-        elif ip_info.is_multicast:
-            self.map.add_node(ip, label="MULTICAST", color="black")
-        elif ip_info.is_private:
-            self.map.add_node(ip, label=ip, color="green")
+        if ip_info.is_private:
+            color = "orange"
+        elif ip_info.is_global:
+            color = "blue"
         else:
-            self.map.add_node(ip, label=ip, color="blue")
+            color = "green"
 
-    def _get_gateways(self) -> set[str]:
-        """Gets all gateway entries from the routing table and returns a set of their labels
-        
-        Platform Support:
-        - Windows: Uses 'route print -4' command to find gateways
-        - Linux: Uses 'ip route list' command to find gateways
-
-        Called By:
-        - __init__
-        """
-        os = platform.system()
-        gateways = set()
-
-        if os == "Windows":
-            result = subprocess.run(["route", "print", "-4"], capture_output=True, text=True)
-            output_lines = result.stdout.split("\n")
-            start = None
-            end = None
-
-            for i in range(len(output_lines)):
-                if "Active Routes" in output_lines[i]:
-                    start = i
-
-                elif start is not None and "=" in output_lines[i]:
-                    end = i
-
-            active_routes_entries = output_lines[start+2:end]
-            for entry in active_routes_entries:
-                entry_fields = entry.split()
-                if (len(entry_fields) > 2):
-                    gateway = entry_fields[2]
-                    gateways.add(gateway)
-
-        elif os == "Linux":
-            result = subprocess.run(["ip", "route", "list"], capture_output=True, text=True)
-            lines = result.stdout.split("\n")
-            for line in lines:
-                if "via" not in line:
-                    continue
-
-                parts = line.split()
-                if len(parts) > 2:
-                    gateway = parts[2]
-                    gateways.add(gateway)
-
-        else:
-            self.logger.warning(f"Gateway Discovery not implemented for {os}")
-
-        return gateways
-
-    def _setup_logger(self, level = logging.INFO):
-        self.logger.setLevel(level)
-        
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(level)
-        handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
-
-        self.logger.handlers.clear()
-        self.logger.addHandler(handler)
-
-        self.logger.propagate = False
+        self._map.add_node(ip, label=ip, color=color)
+        self._capture_status.nodes_found += 1

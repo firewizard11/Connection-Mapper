@@ -1,11 +1,9 @@
 # Connection Mapper
 
+**Github Link:** <https://github.com/firewizard11/Connection-Mapper>
+
 ## Project Description
 
-Connection Mapper is a program that visualises the traffic your device generates
+This project is being made to visualise the **network** traffic of the device it's being run on. 
 
-## References
-
-- <https://forum.xojo.com/t/line-with-arrow-head/50294/3>
-- <https://doc.qt.io/qt-6/graphicsview.html>
-- <https://doc.qt.io/qtforpython-6/examples/example_external_networkx.html>
+>DISCLAIMER: **Network** traffic does not include loopback or virtual hosts (atleast for now)
