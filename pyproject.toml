@@ -1,6 +1,6 @@
 [project]
 name = "connection-mapper"
-version = "0.1.0"
+version = "0.3.0"
 description = "Connection Mapper captures traffic and visualises the devices your device connects to while its running"
 authors = [
     {name = "Sam",email = "seriousemail178@gmail.com"}

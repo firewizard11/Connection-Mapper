@@ -3,7 +3,7 @@ import networkx as nx
 
 from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem
 from PyQt6.QtCore import Qt, QRectF, QPointF, QLineF
-from PyQt6.QtGui import QPainter, QBrush, QPen, QColor, QPolygonF
+from PyQt6.QtGui import QPainter, QBrush, QPen, QColor
 
 
 class QNode(QGraphicsItem):
@@ -114,10 +114,10 @@ class QDiGraphView(QGraphicsView):
         self.setBackgroundBrush(QColor("white"))
         self.setDragMode(self.DragMode.ScrollHandDrag)
 
-        self._scene = QGraphicsScene()
-        self.setScene(self._scene)
+        self._internal_graph = QGraphicsScene()
+        self.setScene(self._internal_graph)
         
-        self._graph = graph
+        self._nx_graph = graph
         self._scale = 500
         self._radius = 30
         self._diameter = self._radius * 2
@@ -126,28 +126,27 @@ class QDiGraphView(QGraphicsView):
         self._node_map = {}
 
         self.load_graph()
-        self.fitInView(self._scene.sceneRect().adjusted(-200, -200, -200, -200), Qt.AspectRatioMode.KeepAspectRatio)
 
     def load_graph(self):
-        self._scene.clear()
+        self._internal_graph.clear()
         self._node_map.clear()
 
         if not self._position_map:
-            self._position_map = nx.spring_layout(self._graph)
+            self._position_map = nx.spring_layout(self._nx_graph)
         else:
-            self._position_map = nx.spring_layout(self._graph, pos=self._position_map, fixed=self._position_map.keys(), iterations=10)
+            self._position_map = nx.spring_layout(self._nx_graph, pos=self._position_map, fixed=self._position_map.keys(), iterations=10)
 
         self.add_nodes()
         self.add_edges()
 
-        self._scene.setSceneRect(self._scene.itemsBoundingRect())
+        self._internal_graph.setSceneRect(self._internal_graph.itemsBoundingRect())
 
     def add_nodes(self):
-        for node, data in self._graph.nodes.items():
+        for node, data in self._nx_graph.nodes.items():
 
             item = QNode(data["label"], data["color"])
 
-            self._scene.addItem(item)
+            self._internal_graph.addItem(item)
 
             item.setPos(self.get_node_position(node))
             item.setZValue(1)
@@ -161,12 +160,12 @@ class QDiGraphView(QGraphicsView):
         return item_position
 
     def add_edges(self):
-        for u, v in self._graph.edges:
-            self._scene.addItem(QEdge(
+        for u, v in self._nx_graph.edges:
+            self._internal_graph.addItem(QEdge(
                 self._node_map[u],
                 self._node_map[v]
             ))
 
     def update_graph(self, new_graph: nx.DiGraph):
-        self._graph = new_graph
+        self._nx_graph = new_graph
         self.load_graph()

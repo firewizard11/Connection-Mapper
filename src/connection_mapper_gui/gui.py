@@ -1,5 +1,5 @@
 from connection_mapper.connection_mapper import ConnectionMapper
-from connection_mapper_gui.custom_widgets import QDiGraphView
+from connection_mapper_gui.graph_view import QDiGraphView
 
 from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QGroupBox, QVBoxLayout, QGridLayout
 from PyQt6.QtCore import QTimer, Qt
@@ -81,8 +81,8 @@ class ConnectionMapperGUI:
         capture_status = self._mapper.get_status()
 
         self._status_lbl.setText(f"Capture Status: {"Running" if capture_status.is_capturing else "Not Running"}")
-        self._pkt_cnt_lbl.setText(f"Packet Count: {capture_status.packet_cnt}")
-        self._node_cnt_lbl.setText(f"Node Count: {capture_status.node_cnt}")
+        self._pkt_cnt_lbl.setText(f"Packet Count: {capture_status.packets_processed}")
+        self._node_cnt_lbl.setText(f"Node Count: {capture_status.nodes_found}")
 
     def _update_map(self):
         new_map = self._mapper.get_map()
