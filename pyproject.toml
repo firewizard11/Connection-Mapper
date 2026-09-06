@@ -1,6 +1,6 @@
 [project]
 name = "connection-mapper"
-version = "0.3.0"
+version = "0.3.1"
 description = "Connection Mapper captures traffic and visualises the devices your device connects to while its running"
 authors = [
     {name = "Sam",email = "seriousemail178@gmail.com"}
@@ -33,3 +33,6 @@ dev = [
     "zstandard (>=0.25.0,<0.26.0)",
     "ordered-set (>=4.1.0,<5.0.0)"
 ]
+
+[project.scripts]
+cm-gui = "connection_mapper_gui.gui:gui_entry"

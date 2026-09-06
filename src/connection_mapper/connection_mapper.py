@@ -1,6 +1,6 @@
 import ipaddress
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import networkx as nx
 from scapy.interfaces import get_working_ifaces, NetworkInterface
@@ -26,8 +26,8 @@ class ConnectionMapper:
     """
 
     def __init__(self):
-        # Device Attr
-        self._public_interfaces = self._find_public_interfaces()
+        # Device Attributes
+        self._public_interfaces = self._find_lan_interfaces()
 
         if len(self._public_interfaces) == 0:
             raise ValueError("Couldn't find public interfaces")
@@ -39,7 +39,7 @@ class ConnectionMapper:
             self._public_ifnames.append(_if.name)
             self._public_ipv4.append(_if.ip)
         
-        # Capture Attr
+        # Capture Attributes
         self._capture_status = CaptureStatus(False, 0, 0) # Must Lock
         self.lock = threading.Lock()
         self._capturer = AsyncSniffer(
@@ -53,10 +53,8 @@ class ConnectionMapper:
         self._capture_status.nodes_found += 1
 
     def start_capture(self):
-        try:
+        with self.lock:
             self._capturer.start()
-        except Exception as e:
-            raise e
         
         self._capture_status.is_capturing = True
 
@@ -71,13 +69,13 @@ class ConnectionMapper:
 
     def get_status(self) -> CaptureStatus:
         with self.lock:
-            return self._capture_status
+            return replace(self._capture_status)
 
     def get_map(self) -> nx.DiGraph:
         with self.lock:
             return self._map.copy()
 
-    def _find_public_interfaces(self) -> list[NetworkInterface]:
+    def _find_lan_interfaces(self) -> list[NetworkInterface]:
         """ Tries to find the public nic like wlan0 or Wi-Fi (excluding virtual) """
         interfaces = get_working_ifaces()
         public_ifs = []
@@ -86,7 +84,10 @@ class ConnectionMapper:
             if _if.ip is None or _if.ip == "":
                 continue
 
-            ip = ipaddress.IPv4Address(_if.ip)
+            try:
+                ip = ipaddress.IPv4Address(_if.ip)
+            except ipaddress.AddressValueError:
+                continue
             
             if ip.is_link_local:
                 continue
